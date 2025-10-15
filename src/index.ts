@@ -8,6 +8,8 @@ import {
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import pg from "pg";
+import { z } from "zod";
+import { zodToJsonSchema } from "zod-to-json-schema";
 
 // Define interfaces
 interface RedshiftTable {
@@ -49,8 +51,8 @@ const server = new Server(
   },
   {
     capabilities: {
-      resources: {},
-      tools: {},
+      resources: { list: {} },
+      tools: { list: {}, call: {} },
     },
   },
 );
@@ -267,41 +269,26 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
 
 // List available tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
+  const querySchema = z.object({ sql: z.string() });
+  const describeTableSchema = z.object({ schema: z.string(), table: z.string() });
+  const findColumnSchema = z.object({ pattern: z.string() });
+
   return {
     tools: [
       {
         name: "query",
         description: "Run a read-only SQL query against Redshift",
-        inputSchema: {
-          type: "object",
-          properties: {
-            sql: { type: "string" },
-          },
-          required: ["sql"],
-        },
+        inputSchema: zodToJsonSchema(querySchema),
       },
       {
         name: "describe_table",
         description: "Get detailed information about a specific table",
-        inputSchema: {
-          type: "object",
-          properties: {
-            schema: { type: "string" },
-            table: { type: "string" },
-          },
-          required: ["schema", "table"],
-        },
+        inputSchema: zodToJsonSchema(describeTableSchema),
       },
       {
         name: "find_column",
         description: "Find tables containing columns with specific name patterns",
-        inputSchema: {
-          type: "object",
-          properties: {
-            pattern: { type: "string" },
-          },
-          required: ["pattern"],
-        },
+        inputSchema: zodToJsonSchema(findColumnSchema),
       },
     ],
   };
