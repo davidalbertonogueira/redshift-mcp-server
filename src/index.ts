@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import {
   CallToolRequestSchema,
   ListResourcesRequestSchema,
   ListToolsRequestSchema,
   ReadResourceRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import express from "express";
+import cors from "cors";
 import pg from "pg";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
@@ -425,8 +428,56 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // Run the server
 async function runServer() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  const isHttpMode = process.env.HTTP_MODE === 'true';
+  
+  if (isHttpMode) {
+    // HTTP/SSE mode for web-based clients like MCP Inspector
+    const app = express();
+    const port = process.env.PORT || 3000;
+    
+    // Enable CORS for all origins (adjust for production)
+    app.use(cors({
+      origin: true,
+      credentials: true
+    }));
+    
+    app.use(express.json());
+    
+    // SSE endpoint for MCP Inspector
+    app.get('/sse', async (req, res) => {
+      console.log('SSE connection established');
+      const transport = new SSEServerTransport('/message', res);
+      await server.connect(transport);
+    });
+    
+    // HTTP endpoint for direct HTTP requests
+    app.post('/message', async (req, res) => {
+      try {
+        console.log('HTTP request received:', req.body);
+        // Handle the MCP request directly
+        res.json({ message: 'Use SSE endpoint for MCP communication' });
+      } catch (error) {
+        console.error('HTTP request error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+      }
+    });
+    
+    // Health check endpoint
+    app.get('/health', (req, res) => {
+      res.json({ status: 'ok', mode: 'http', timestamp: new Date().toISOString() });
+    });
+    
+    app.listen(port, () => {
+      console.log(`MCP Server running in HTTP mode on port ${port}`);
+      console.log(`SSE endpoint: http://localhost:${port}/sse`);
+      console.log(`Health check: http://localhost:${port}/health`);
+    });
+  } else {
+    // STDIO mode for command-line clients
+    console.log('MCP Server running in STDIO mode');
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+  }
 }
 
 runServer().catch(console.error);

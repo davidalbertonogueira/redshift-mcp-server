@@ -7,7 +7,9 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
+    "start:http": "HTTP_MODE=true node dist/index.js",
     "dev": "ts-node --esm src/index.ts",
+    "dev:http": "HTTP_MODE=true ts-node --esm src/index.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -22,10 +24,12 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.8.0",
     "@types/express": "^5.0.3",
+    "cors": "^2.8.5",
     "express": "^5.1.0",
     "pg": "^8.11.3"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.17",
     "@types/node": "^20.17.30",
     "@types/pg": "^8.10.9",
     "ts-node": "^10.9.2",

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MCP SSE Test</title>
+</head>
+<body>
+    <h1>MCP Server SSE Test</h1>
+    <div id="status">Connecting...</div>
+    <div id="messages"></div>
+
+    <script>
+        const eventSource = new EventSource('http://localhost:3000/sse');
+        const status = document.getElementById('status');
+        const messages = document.getElementById('messages');
+
+        eventSource.onopen = function(event) {
+            status.textContent = 'Connected to MCP Server!';
+            status.style.color = 'green';
+        };
+
+        eventSource.onmessage = function(event) {
+            const div = document.createElement('div');
+            div.textContent = 'Message: ' + event.data;
+            messages.appendChild(div);
+        };
+
+        eventSource.addEventListener('endpoint', function(event) {
+            const div = document.createElement('div');
+            div.textContent = 'Endpoint: ' + event.data;
+            div.style.color = 'blue';
+            messages.appendChild(div);
+        });
+
+        eventSource.onerror = function(event) {
+            status.textContent = 'Connection Error!';
+            status.style.color = 'red';
+            console.error('SSE Error:', event);
+        };
+    </script>
+</body>
+</html>

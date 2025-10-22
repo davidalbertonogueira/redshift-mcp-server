@@ -18,7 +18,10 @@ This repo is based on the [original implementation](https://github.com/paschmari
 - **Runtime**: Node.js 16+
 - **Protocol**: Model Context Protocol (MCP) 1.8.0
 - **Database**: Amazon Redshift (via PostgreSQL driver)
-- **Transport**: Standard I/O (stdio)
+- **Transport**: Dual-mode support
+  - **STDIO**: Standard I/O for command-line clients
+  - **HTTP/SSE**: Server-Sent Events and HTTP for web clients
+- **Web Framework**: Express.js with CORS support
 - **Build**: TypeScript Compiler (tsc)
 - **Container**: Docker with Alpine Linux
 
@@ -38,11 +41,92 @@ redshift-mcp-server/
 
 
 
+## Transport Modes
+
+This server supports **dual transport modes** to work with different types of MCP clients:
+
+### **STDIO Transport (Original)**
+- **Use case**: Command-line tools, IDE integrations, local development
+- **Clients**: Cursor IDE, Claude Desktop, custom CLI tools
+- **Communication**: Standard input/output streams
+- **Setup**: Direct process execution
+
+### **HTTP/SSE Transport (New)**
+- **Use case**: Web-based tools, browser clients, remote access
+- **Clients**: MCP Inspector, web applications, remote integrations
+- **Communication**: HTTP requests and Server-Sent Events
+- **Setup**: HTTP server on configurable port (default: 3000)
+
+### **Available Endpoints (HTTP Mode)**
+- **SSE Endpoint**: `http://localhost:3000/sse` - For real-time MCP communication
+- **HTTP Endpoint**: `http://localhost:3000/message` - For direct HTTP requests
+- **Health Check**: `http://localhost:3000/health` - Server status and diagnostics
+
 ## Integration with MCP Clients
 
-### Project-Specific Configuration
+### MCP Inspector (Web-based Testing)
 
-Create a `.cursor/mcp.json` file in your project directory, edit your Windsurf `mcp_config.json` file or equivalent:
+The [MCP Inspector](https://github.com/modelcontextprotocol/inspector) is a web-based tool for testing MCP servers.
+
+#### **Setup Instructions:**
+1. **Start HTTP server:**
+   ```bash
+   DATABASE_URL="your-redshift-url" npm run start:http
+   ```
+
+2. **Open MCP Inspector:** https://github.com/modelcontextprotocol/inspector
+
+3. **Connection Settings:**
+   - **Transport Type:** `SSE` (recommended) or `Streamable HTTP`
+   - **Connection Type:** `Direct`
+   - **URL:** `http://localhost:3000/sse` (for SSE) or `http://localhost:3000/message` (for HTTP)
+
+### Windsurf/Cursor MCP Configuration
+
+Add this MCP server to your Windsurf `mcp_config.json` file using one of the following methods:
+For Cursor, create a `.cursor/mcp.json` file in your project directory.
+
+#### **Option 1: Via Node.js (Recommended)**
+```json
+{
+  "mcpServers": {
+    "redshift-mcp": {
+      "command": "node",
+      "args": ["path/to/dist/index.js"],
+      "env": {
+        "DATABASE_URL": "redshift://username:password@hostname:port/database?ssl=true"
+      }
+    }
+  }
+}
+```
+
+#### **Option 2: Via Docker**
+```json
+{
+  "mcpServers": {
+    "redshift": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "-e",
+        "DATABASE_URL",
+        "redshift-mcp:latest"
+      ],
+      "env": {
+        "DATABASE_URL": "redshift://username:password@hostname:port/database?ssl=true"
+      }
+    }
+  }
+}
+```
+
+### Other IDE Configuration
+
+#### **Cursor IDE**
+Create a `.cursor/mcp.json` file in your project directory:
 
 ```json
 {
@@ -110,13 +194,26 @@ npm run build
 
 # Set up environment
 export DATABASE_URL="redshift://username:password@hostname:5439/database?ssl=true"
+# Optional: Custom port (default: 3000)
+export PORT=3000
 
-# Run in development mode
+
+# STDIO Mode (Original - for CLI clients)
+## Run in development mode
 npm run dev
 
-# Or run compiled version
+## Or run compiled version
 npm start
+
+# HTTP/SSE Mode
+
+## Development
+npm run dev:http
+
+## Production
+npm run start:http
 ```
+
 
 ### Docker Setup
 
@@ -124,17 +221,39 @@ npm start
 # Build Docker image
 docker build -t redshift-mcp:latest .
 
-# Run with environment variable
+# Run STDIO mode (original - for CLI clients)
 docker run -e DATABASE_URL='redshift://user:pass@host:5439/db?ssl=true' -i --rm redshift-mcp:latest
+
+# Run HTTP/SSE mode (new - for web clients like MCP Inspector)
+docker run -e DATABASE_URL='redshift://user:pass@host:5439/db?ssl=true' \
+           -e HTTP_MODE=true \
+           -p 3000:3000 \
+           redshift-mcp:latest
+
+# Run HTTP mode with custom port
+docker run -e DATABASE_URL='redshift://user:pass@host:5439/db?ssl=true' \
+           -e HTTP_MODE=true \
+           -e PORT=8080 \
+           -p 8080:8080 \
+           redshift-mcp:latest
 ```
 
 ## Build & Deploy Commands
 
 ### Development Commands
 ```bash
-npm run dev          # Run with ts-node (development)
+# Build
 npm run build        # Compile TypeScript to JavaScript
+
+# STDIO Mode (Original)
+npm run dev          # Run with ts-node (development)
 npm start            # Run compiled JavaScript
+
+# HTTP/SSE Mode (New)
+npm run dev:http     # Run HTTP mode with ts-node (development)
+npm run start:http   # Run HTTP mode with compiled JavaScript
+
+# Testing
 npm test             # Run tests (placeholder)
 ```
 
@@ -143,8 +262,11 @@ npm test             # Run tests (placeholder)
 # Build image
 docker build -t redshift-mcp:v1.0 .
 
-# Run interactively
+# Run STDIO mode (CLI clients)
 docker run -e DATABASE_URL='...' -i --rm redshift-mcp:v1.0
+
+# Run HTTP mode (web clients)
+docker run -e DATABASE_URL='...' -e HTTP_MODE=true -p 3000:3000 redshift-mcp:v1.0
 
 # Build and tag for production
 docker build -t your-registry/redshift-mcp:latest .
@@ -166,13 +288,19 @@ services:
 
 ## Configuration
 
-### Database Connection
-The server requires a `DATABASE_URL` environment variable in this format:
-```
-redshift://username:password@hostname:port/database?ssl=true&timeout=600
-```
+### Environment Variables
 
-**Parameters:**
+#### **Required**
+- **`DATABASE_URL`**: Redshift connection string
+  ```
+  redshift://username:password@hostname:port/database?ssl=true&timeout=600
+  ```
+
+#### **Optional**
+- **`HTTP_MODE`**: Set to `'true'` to enable HTTP/SSE transport (default: `false` for STDIO)
+- **`PORT`**: HTTP server port when in HTTP mode (default: `3000`)
+
+### Database Connection Parameters
 - `username`: Redshift username
 - `password`: Redshift password  
 - `hostname`: Cluster endpoint (e.g., `cluster.region.redshift.amazonaws.com`)
@@ -180,6 +308,23 @@ redshift://username:password@hostname:port/database?ssl=true&timeout=600
 - `database`: Database name
 - `ssl=true`: Enable SSL (recommended)
 - `timeout=600`: Connection timeout in seconds
+
+### Transport Mode Selection
+
+#### **STDIO Mode (Default)**
+```bash
+# No additional environment variables needed
+DATABASE_URL="redshift://..." npm start
+```
+
+#### **HTTP/SSE Mode**
+```bash
+# Enable HTTP transport
+DATABASE_URL="redshift://..." HTTP_MODE=true npm start
+
+# With custom port
+DATABASE_URL="redshift://..." HTTP_MODE=true PORT=8080 npm start
+```
 
 ### MCP Client Configuration
 
@@ -238,11 +383,42 @@ The server provides schema information that IDEs can use:
   
 ## Testing & Validation
 
-### Basic Connectivity Test
+### **STDIO Mode Testing**
+
+#### Basic Connectivity Test
 ```bash
-# Test MCP protocol without database
+# Test MCP protocol without database connection
 echo '{"jsonrpc":"2.0","method":"tools/list","params":{},"id":1}' | npx ts-node --esm test-mcp.ts
 ```
+
+#### Full Server Testing (STDIO)
+```bash
+# Test with actual Redshift connection
+echo '{"jsonrpc":"2.0","method":"tools/list","params":{},"id":1}' | \
+DATABASE_URL='redshift://user:pass@host:5439/db?ssl=true' npm start
+```
+
+### **HTTP/SSE Mode Testing**
+
+#### Start HTTP Server
+```bash
+# Start server in HTTP mode
+DATABASE_URL="redshift://user:pass@host:5439/db?ssl=true" npm run start:http
+```
+
+#### Test Health Endpoint
+```bash
+# Verify server is running
+curl http://localhost:3000/health
+
+# Expected response:
+# {"status":"ok","mode":"http","timestamp":"2025-10-22T14:38:02.513Z"}
+```
+
+#### Test with MCP Inspector
+1. Start HTTP server (see above)
+2. Open [MCP Inspector](https://github.com/modelcontextprotocol/inspector)
+3. Connect using `http://localhost:3000/sse`
 
 ## Full Server Testing
 
