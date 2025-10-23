@@ -437,10 +437,12 @@ async function runServer() {
     const app = express();
     const port = process.env.PORT || 3000;
     
-    // Enable CORS for all origins (adjust for production)
+    app.use(express.json());
     app.use(cors({
       origin: true,
-      credentials: true
+      credentials: true,
+      allowedHeaders: ['Content-Type', 'Authorization', 'Proxy-Authorization', 'Accept'],
+      methods: ['GET','POST','OPTIONS']
     }));
     
     app.use(express.json());
@@ -471,31 +473,49 @@ async function runServer() {
       };
     });
 
-    app.post('/message', express.json(), async (req: Request, res: Response) => {
-      // client should include sessionId either as query param or in body
-      const sessionId = (req.query?.sessionId as string) || req.body?.sessionId;
-
-      if (!sessionId) {
-        res.status(400).json({ error: 'Missing sessionId (client must provide it as ?sessionId= or in body.sessionId)' });
-        return;
-      }
-
-      const transport = transports.get(sessionId);
-      if (!transport) {
-        console.warn('No transport found for sessionId', sessionId);
-        res.status(404).json({ error: `No active session for ${sessionId}` });
-        return;
-      }
-
+    app.post('/message', async (req: Request, res: Response) => {
       try {
-        // Forward the incoming message to the transport so the MCP Server receives it
-        // some versions of the SDK require the raw body passed as third param
-        await transport.handlePostMessage(req, res, req.body);
+        console.log('=== POST /message ===');
+        console.log('headers:', req.headers);
+        console.log('query:', req.query);
+        // print body safely (limit length)
+        const bodyPreview = typeof req.body === 'string' ? req.body.slice(0,2000) : JSON.stringify(req.body || {}).slice(0,2000);
+        console.log('body (preview):', bodyPreview);
+
+        const sessionId = (req.query?.sessionId as string) || req.body?.sessionId;
+        if (!sessionId) {
+          console.warn('POST /message missing sessionId');
+          return res.status(400).json({ error: 'Missing sessionId (include ?sessionId= in URL or body.sessionId)' });
+        }
+
+        const transport = transports.get(sessionId);
+        if (!transport) {
+          console.warn('No transport found for sessionId', sessionId);
+          return res.status(404).json({ error: `No active session ${sessionId}` });
+        }
+
+        // Forward the request to the transport. SDKs expose different helpers; try handlePostMessage if available.
+        if (typeof (transport as any).handlePostMessage === 'function') {
+          await (transport as any).handlePostMessage(req, res, req.body);
+          // transport handler may have ended the response; return to avoid double-response
+          return;
+        }
+
+        // Fallback: if transport expects raw JSON string or a method name differs, try common alternatives:
+        if (typeof (transport as any).onPost === 'function') {
+          await (transport as any).onPost(req.body);
+          res.status(200).json({ ok: true });
+          return;
+        }
+
+        console.error('Transport has no known POST handler methods. Transport keys:', Object.keys(transport));
+        res.status(500).json({ error: 'Transport handler not found' });
       } catch (err) {
-        console.error('Error handling POST message:', err);
+        console.error('Error in POST /message:', err);
         res.status(500).json({ error: 'internal server error' });
       }
     });
+
     
     // Health check endpoint
     app.get('/health', (req, res) => {
