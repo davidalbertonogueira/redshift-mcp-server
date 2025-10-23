@@ -13,7 +13,9 @@ import cors from "cors";
 import pg from "pg";
 import { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
+import type { Request, Response } from "express";
 
+const transports = new Map<string, SSEServerTransport>();
 // Define interfaces
 interface RedshiftTable {
   table_name: string;
@@ -444,21 +446,54 @@ async function runServer() {
     app.use(express.json());
     
     // SSE endpoint for MCP Inspector
-    app.get('/sse', async (req, res) => {
-      console.log('SSE connection established');
+    app.get('/sse', async (req: Request, res: Response) => {
+      console.log('SSE connection attempt from', req.ip);
+
+      // Create transport for this connection: specify the POST endpoint path clients will use
       const transport = new SSEServerTransport('/message', res);
+
+      // Store transport so POST /message can route to it
+      transports.set(transport.sessionId, transport);
+
+      // Optional: log the session id so you can debug easily
+      console.log('New SSE transport sessionId=', transport.sessionId);
+
+      // Connect server to the transport
       await server.connect(transport);
+
+      // When the server/transport closes, cleanup
+      transport.onclose = async () => {
+        console.log('Transport closed, cleaning up session', transport.sessionId);
+        transports.delete(transport.sessionId);
+        if (typeof server.onclose === 'function') {
+          try { await server.onclose(); } catch (e) { /* ignore */ }
+        }
+      };
     });
-    
-    // HTTP endpoint for direct HTTP requests
-    app.post('/message', async (req, res) => {
+
+    app.post('/message', express.json(), async (req: Request, res: Response) => {
+      // client should include sessionId either as query param or in body
+      const sessionId = (req.query?.sessionId as string) || req.body?.sessionId;
+
+      if (!sessionId) {
+        res.status(400).json({ error: 'Missing sessionId (client must provide it as ?sessionId= or in body.sessionId)' });
+        return;
+      }
+
+      const transport = transports.get(sessionId);
+      if (!transport) {
+        console.warn('No transport found for sessionId', sessionId);
+        res.status(404).json({ error: `No active session for ${sessionId}` });
+        return;
+      }
+
       try {
-        console.log('HTTP request received:', req.body);
-        // Handle the MCP request directly
-        res.json({ message: 'Use SSE endpoint for MCP communication' });
-      } catch (error) {
-        console.error('HTTP request error:', error);
-        res.status(500).json({ error: 'Internal server error' });
+        // Forward the incoming message to the transport so the MCP Server receives it
+        // some versions of the SDK require the raw body passed as third param
+        await transport.handlePostMessage(req, res, req.body);
+      } catch (err) {
+        console.error('Error handling POST message:', err);
+        res.status(500).json({ error: 'internal server error' });
       }
     });
     
