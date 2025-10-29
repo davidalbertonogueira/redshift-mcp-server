@@ -3,12 +3,12 @@
   "name": "io.github.davidalbertonogueira/redshift-mcp-server",
   "title": "Redshift MCP Server",
   "description": "Secure, read-only access to Amazon Redshift with schema introspection and smart sampling",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "redshift-js-mcp-server",
-      "version": "0.1.0",
+      "identifier": "@davidalbertonogueira/redshift-mcp-server",
+      "version": "1.0.1",
       "transport": {
         "type": "stdio"
       }

@@ -1,6 +1,6 @@
 {
   "name": "@davidalbertonogueira/redshift-mcp-server",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "description": "Model Context Protocol server for Amazon Redshift",
   "mcpName": "io.github.davidalbertonogueira/redshift-mcp-server",
   "main": "dist/index.js",
@@ -13,7 +13,7 @@
     "dev": "ts-node --esm src/index.ts",
     "dev:http": "TRANSPORT_MODE=http ts-node --esm src/index.ts",
     "dev:http:stateless": "TRANSPORT_MODE=http STATELESS_MODE=true ts-node --esm src/index.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"No tests specified\""
   },
   "keywords": [
     "mcp",
