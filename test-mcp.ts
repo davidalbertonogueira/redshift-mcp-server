@@ -15,7 +15,7 @@ console.error("=== MCP Server Test Utility ===");
 const server = new Server(
   {
     name: "test-server",
-    version: "1.0.3",
+    version: "1.0.4",
   },
   {
     capabilities: {
