@@ -121,6 +121,16 @@ API_TOKEN="your-secret-token-here"
 REDACT_PII="false"
 ```
 
+> ⚠️ **Special characters in passwords:** If your `DATABASE_URL` password contains shell metacharacters (`$`, `` ` ``, `\`, etc.), use **single quotes** in `.env`, not double quotes. When you `source` (or `set -a && source .env && set +a`) a `.env` file, bash performs variable expansion inside double-quoted values. For example, a password containing `$9` will be silently expanded as a positional parameter (usually to an empty string), truncating/corrupting your password.
+>
+> ```bash
+> # ❌ Wrong - $9 gets expanded by bash on `source`
+> DATABASE_URL="redshift://user:kjash$90sbb@host:5439/db?ssl=true"
+>
+> # ✅ Correct - single quotes prevent all expansion
+> DATABASE_URL='redshift://user:kjash$90sbb@host:5439/db?ssl=true'
+> ```
+
 ---
 
 ## 🔄 Transport Modes
