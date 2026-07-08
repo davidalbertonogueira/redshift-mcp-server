@@ -243,9 +243,15 @@ export class RedshiftTools {
   async getSampleData(schema: string, table: string, limit: number = 5, redactPII: boolean = false): Promise<any[]> {
     const client = await this.pool.connect();
     try {
+      if (!/^[a-zA-Z0-9_]+$/.test(schema)) {
+        throw new Error('Invalid input');
+      }
+      if (!/^[a-zA-Z0-9_]+$/.test(table)) {
+        throw new Error('Invalid input');
+      }
       const result = await client.query(`
-        SELECT * FROM "${schema}"."${table}" LIMIT ${limit}
-      `);
+        SELECT * FROM "${schema}"."${table}" LIMIT $1
+      `, [limit]);
       
       // Optionally redact PII fields
       if (redactPII) {
