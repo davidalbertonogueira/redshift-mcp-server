@@ -320,8 +320,21 @@ Builds the root server, `a2a-agent`, and `a2a-bridge`; starts the Postgres/Redsh
 
 ## Known limitations (deliberate, for a one-week scope)
 
+### Cost and exposure
+
+- **No auth on the A2A endpoint, and this matters more than it would for a plain MCP server.** `UserBuilder.noAuthentication`, bound to `localhost`. With a plain MCP server, an open endpoint costs you cheap SQL queries at worst. Here, **every incoming A2A task triggers a real, billable `claude -p` call** — an unauthenticated agent isn't just a data-exposure risk, it's a direct cost/DoS vector, since anyone who can reach it can make you spend subscription usage (or API budget, if reconfigured to use metered billing) just by sending tasks. The root server's [`src/middleware/auth.ts`](./src/middleware/auth.ts) bearer-token pattern is directly reusable before this leaves your machine — treat that as a requirement, not a nice-to-have, for anything beyond local experimentation.
+- **No rate limiting.** `--max-budget-usd` in `claude-runner.ts` caps what a single `claude -p` call can spend, but nothing caps how many tasks arrive per minute — a bursty or malicious caller can still rack up many individually-capped-but-nonzero charges. Combined with the point above, this is the main reason to keep this off any network you don't control.
+- **Reusing a personal Claude subscription seat as a shared backend is a different usage pattern than the seat is meant for.** Fine for this — a personal experiment, on your own machine, that only you invoke. The moment `a2a-agent` serves real external callers, a metered API key or a Bedrock/Vertex-backed deployment is both the safer and the ToS-appropriate choice, not continued reliance on an individual interactive seat.
+
+### Functional gaps
+
 - **No streaming.** `message/send`, not `message/stream` — `claude -p --output-format json` is itself a blocking call with nothing incremental to stream from.
-- **No auth on the A2A endpoint.** `UserBuilder.noAuthentication`, bound to `localhost`. The root server's [`src/middleware/auth.ts`](./src/middleware/auth.ts) bearer-token pattern is directly reusable if this ever needs to leave your machine.
+- **Tasks aren't persisted.** `InMemoryTaskStore` — every task is lost on restart, and nothing is shared if you ever ran more than one `a2a-agent` instance behind a load balancer.
+- **Cancellation is a no-op.** `RedshiftAgentExecutor.cancelTask()` does nothing — a client calling `tasks/cancel` gets no actual cancellation; the underlying `claude -p` subprocess keeps running until it finishes or hits its own timeout.
+- **No memory across tasks.** Each task is an independent, stateless `claude -p` invocation. Asking a follow-up question under the same `contextId` does not carry any memory of a prior task's conversation — there's no multi-turn context the way a normal chat session has.
 - **One `claude -p` subprocess per A2A task**, no pooling/queueing — fine at this scale; N concurrent requests means N concurrent Redshift connections, each from a freshly-spawned MCP server child.
+
+### Dependency pinning
+
 - **`@a2a-js/sdk` is pinned to `0.3.14`** (exact, not `^`) in both packages. `npm install @a2a-js/sdk` today resolves `1.1.0`, a breaking rewrite of the wire format (flat `AgentCard.url` → `supportedInterfaces[]`, text `Part` → a different discriminated union, `message/send` → `SendMessage`). Don't bump this without re-checking the SDK's migration guide.
 - **`a2a-bridge` pins `@modelcontextprotocol/sdk` to `1.20.0` exactly** (matching the root server's currently-resolved version) plus a `zod-to-json-schema` override to `3.24.6`, to dodge a TypeScript type-checking regression between newer `@modelcontextprotocol/sdk` releases (which pull `zod` v4) and `zod-to-json-schema@3.25.x`. `npm audit` will flag `@modelcontextprotocol/sdk@1.20.0` for known advisories (DNS-rebinding protection, ReDoS, cross-client transport reuse) fixed in `1.30.0` — same version root already pins, not a regression introduced here, and low real risk given `a2a-bridge` only runs over local stdio to a single client.
