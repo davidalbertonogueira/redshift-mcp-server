@@ -64,13 +64,41 @@ cp .env.example .env          # then edit DATABASE_URL
 npm start                     # listens on http://localhost:4000
 
 # 3. Point a Claude Code session at the bridge (in a separate terminal/session)
-claude mcp add ask-redshift-agent -s local \
+claude mcp add redshift-a2a-bridge -s local \
   -e REDSHIFT_AGENT_URL=http://localhost:4000 \
   -- node /absolute/path/to/a2a-bridge/dist/index.js
 
 # 4. Ask it something
 # "Using the redshift agent, how many orders have status 'completed'?"
 ```
+
+That registers the bridge **durably** (written to your local Claude Code config, stays until `claude mcp remove redshift-a2a-bridge`) — the right choice for an interactive session where you'll ask it several things.
+
+For a one-shot, scripted, nothing-persisted call instead — same pattern [`test/e2e/ask-redshift-agent.mjs`](./test/e2e/ask-redshift-agent.mjs) actually uses, and the one to reach for in any automation — write a throwaway `--mcp-config` and skip `claude mcp add` entirely:
+
+```bash
+cat > /tmp/mcp-config.json <<'EOF'
+{
+  "mcpServers": {
+    "redshift-a2a-bridge": {
+      "command": "node",
+      "args": ["/absolute/path/to/a2a-bridge/dist/index.js"],
+      "env": { "REDSHIFT_AGENT_URL": "http://localhost:4000" }
+    }
+  }
+}
+EOF
+
+claude -p "How many orders have status 'completed'?" \
+  --mcp-config /tmp/mcp-config.json \
+  --strict-mcp-config \
+  --restricted \
+  --allowedTools "mcp__redshift-a2a-bridge__ask_redshift_agent" \
+  --output-format json \
+  --max-budget-usd 0.50
+```
+
+The tool name after the double underscore is always `ask_redshift_agent` (the bridge's one and only tool, defined in `a2a-bridge/src/server.ts`) — the part before it is whatever server name you pick at registration time, `redshift-a2a-bridge` here to match the bridge's own `package.json` name and the e2e script's config.
 
 Sanity-check the agent on its own before wiring up the bridge:
 
