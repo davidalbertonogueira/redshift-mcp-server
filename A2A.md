@@ -26,6 +26,105 @@ Your Claude Code session          a2a-bridge (MCP, stdio)         a2a-agent (A2A
 
 The exact `claude -p` flags used by `a2a-agent/src/claude-runner.ts` are a direct port of the ones already proven in [`test/e2e/ask-redshift-mcp.mjs`](./test/e2e/ask-redshift-mcp.mjs) — see that file for the original validation.
 
+## How it works
+
+### `a2a-agent`
+
+**[`claude-runner.ts`](./a2a-agent/src/claude-runner.ts)** — the piece that actually shells out to Claude:
+```
+buildMcpConfig(serverEntryPath, databaseUrl):
+    return { mcpServers: { redshift: { command: "node", args: [serverEntryPath], env: { DATABASE_URL } } } }
+
+buildClaudeArgs(taskText, mcpConfigPath, maxBudgetUsd):
+    return ["-p", taskText,
+            "--mcp-config", mcpConfigPath, "--strict-mcp-config", "--restricted",
+            "--allowedTools", "mcp__redshift__query,mcp__redshift__describe_table,mcp__redshift__find_column",
+            "--output-format", "json", "--max-budget-usd", maxBudgetUsd]
+
+parseClaudeOutput(stdout):
+    return JSON.parse(stdout).result.trim()   // throws if stdout isn't valid JSON
+
+runClaude(taskText):
+    tmpDir = make a temp dir
+    write buildMcpConfig(pathToRootDistIndexJs, process.env.DATABASE_URL) → tmpDir/mcp-config.json
+    try:
+        stdout = spawn("claude", buildClaudeArgs(taskText, mcpConfigPath), timeout=120s)
+        return { text: parseClaudeOutput(stdout) }
+    catch err:
+        return { error: err.message }          // non-zero exit, timeout, bad JSON — all land here
+    finally:
+        delete tmpDir
+```
+
+**[`executor.ts`](./a2a-agent/src/executor.ts)** — the A2A task lifecycle around that call:
+```
+class RedshiftAgentExecutor:
+    execute(requestContext, eventBus):
+        taskText = text of requestContext.userMessage's first text part
+        eventBus.publish( Task{ id, contextId, status: "submitted" } )
+        eventBus.publish( StatusUpdate{ status: "working", final: false } )
+
+        result = await runClaude(taskText)
+
+        if result has "error":
+            eventBus.publish( StatusUpdate{ status: "failed", message: result.error, final: true } )
+        else:
+            eventBus.publish( StatusUpdate{ status: "completed", message: result.text, final: true } )
+
+    cancelTask(): no-op   // single execFile call, nothing to interrupt for v1
+```
+
+**[`agent-card.ts`](./a2a-agent/src/agent-card.ts)** — just a static data object: name/description/`url`/`capabilities: {streaming:false}`/one `skill` ("query-redshift").
+
+**[`index.ts`](./a2a-agent/src/index.ts)** — wiring, no logic of its own:
+```
+agentCard = buildAgentCard(baseUrl)
+requestHandler = new DefaultRequestHandler(agentCard, InMemoryTaskStore(), new RedshiftAgentExecutor())
+
+app = express()
+app.use(express.json())
+app.use("/.well-known/agent-card.json", agentCardHandler(requestHandler))
+app.use(jsonRpcHandler(requestHandler))   // routes message/send etc. to requestHandler → executor
+app.listen(port, "localhost")
+```
+
+### `a2a-bridge`
+
+**[`server.ts`](./a2a-bridge/src/server.ts)** — the one MCP tool and the A2A call it makes:
+```
+TOOL_NAME = "ask_redshift_agent"
+
+extractText(result):                      // result is a Message OR a Task
+    message = result.kind == "message" ? result : result.status.message
+    return join(message's text parts)
+
+handleListTools():
+    return [ { name: TOOL_NAME, inputSchema: { question: string } } ]
+
+handleCallTool(request, agentUrl, createClient):
+    if request.toolName != TOOL_NAME: return isError
+    question = request.arguments.question
+    try:
+        client = await createClient(agentUrl)      // real one: ClientFactory().createFromUrl(agentUrl)
+        result = await client.sendMessage({ message: { role: "user", parts: [{ text: question }] } })
+        return { content: [ text: extractText(result) ] }
+    catch err:
+        return { isError: true, content: [ text: "Error calling redshift agent: " + err.message ] }
+
+createBridgeServer(agentUrl):
+    server = new Server(...)
+    server.setRequestHandler(ListTools, handleListTools)
+    server.setRequestHandler(CallTool, req => handleCallTool(req, agentUrl))
+    return server
+```
+
+**[`index.ts`](./a2a-bridge/src/index.ts)**:
+```
+agentUrl = env.REDSHIFT_AGENT_URL ?? "http://localhost:4000"
+server = createBridgeServer(agentUrl)
+server.connect(new StdioServerTransport())
+```
+
 ## Configuration
 
 ### `a2a-agent/.env` (copy from `a2a-agent/.env.example`)
