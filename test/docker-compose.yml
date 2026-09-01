@@ -1,0 +1,19 @@
+services:
+  redshift-emulator:
+    image: postgres:16-alpine
+    container_name: redshift-mcp-test-db
+    environment:
+      POSTGRES_USER: redshift
+      POSTGRES_PASSWORD: redshift
+      POSTGRES_DB: analytics
+    ports:
+      - "5439:5432"
+    volumes:
+      - ./docker/init:/docker-entrypoint-initdb.d:ro
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U redshift -d analytics"]
+      interval: 2s
+      timeout: 3s
+      retries: 30

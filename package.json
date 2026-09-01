@@ -13,7 +13,12 @@
     "dev": "ts-node --esm src/index.ts",
     "dev:http": "TRANSPORT_MODE=http ts-node --esm src/index.ts",
     "dev:http:stateless": "TRANSPORT_MODE=http STATELESS_MODE=true ts-node --esm src/index.ts",
-    "test": "echo \"No tests specified\""
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:db:up": "docker compose -f test/docker-compose.yml up -d --wait",
+    "test:db:down": "docker compose -f test/docker-compose.yml down -v",
+    "test:db:logs": "docker compose -f test/docker-compose.yml logs -f",
+    "test:e2e": "node test/e2e/ask-redshift-mcp.mjs"
   },
   "keywords": [
     "mcp",
@@ -36,7 +41,8 @@
     "@types/node": "^20.17.30",
     "@types/pg": "^8.10.9",
     "ts-node": "^10.9.2",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^4.1.11"
   },
   "engines": {
     "node": ">=16.0.0"

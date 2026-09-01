@@ -72,6 +72,7 @@ docker run \
 - [Transport Modes](#-transport-modes)
 - [Authentication](#-authentication)
 - [IDE Integration](#-ide-integration)
+- [Testing](#-testing)
 - [Dust.tt Integration](#-dusttt-integration)
 - [Kubernetes Deployment](#%EF%B8%8F-kubernetes-deployment)
 - [Available Tools](#-available-tools)
@@ -316,6 +317,54 @@ npm start
 - List tools
 - Execute `query` tool
 - Check resources
+
+---
+
+## 🧪 Testing
+
+There's no local emulator for Redshift itself, so tests run against plain Postgres (`postgres:16-alpine` via Docker) with a compatibility shim for the handful of Redshift-only system views this project relies on (`SVV_COLUMNS`, `SVV_TABLES`, `SVV_TABLE_INFO`, and `pg_attribute.attisdistkey`/`attsortkeyord`). It's a real emulator for *this project's* query surface, not a general Redshift emulator — Redshift-only SQL like `COPY`/`UNLOAD`, or distribution/sort-aware query plans, still isn't covered, and `is_distkey`/`is_sortkey` always come back `false`.
+
+### Integration tests (`npm test`)
+
+```bash
+npm test
+```
+
+This spins up the emulator (Docker required), seeds it with a small `clients` / `orders` / `order_items` dataset (see [`test/docker/init/`](./test/docker/init/)) plus a second `marketing` schema, runs the full [`RedshiftTools`](./src/core/redshift-tools.ts) suite against it via [vitest](https://vitest.dev), and tears the container down again — no manual setup, and no state left behind. It's safe to run in CI (e.g. the existing `publish-mcp.yml` workflow already calls `npm run test --if-present`, and GitHub's `ubuntu-latest` runners ship Docker).
+
+Useful variants:
+
+```bash
+npm run test:watch        # vitest in watch mode
+npm run test:db:up        # start the emulator and leave it running
+npm run test:db:logs      # tail Postgres logs
+npm run test:db:down      # stop it
+KEEP_TEST_DB=true npm test  # run the suite but leave the container up afterward, for poking around
+```
+
+Connect to the running emulator directly with `psql "redshift://redshift:redshift@localhost:5439/analytics"` (or any Postgres client) once it's up.
+
+### End-to-end smoke test (`npm run test:e2e`)
+
+```bash
+npm run test:e2e
+```
+
+This drives the **real `claude` CLI** against a real build of this server, connected to the same local emulator, and asks it a natural-language question ("how many orders have status 'completed'?") to confirm the whole stack — MCP protocol, tool schema, SQL generation, DB round-trip — works end to end, not just the internal `RedshiftTools` methods.
+
+The MCP server is registered for that single invocation only, via:
+
+```bash
+claude -p "..." \
+  --mcp-config <temp-file>.json \
+  --strict-mcp-config \
+  --restricted \
+  --allowedTools "mcp__redshift-e2e__query"
+```
+
+`--mcp-config` loads the server from a throwaway JSON file instead of any persistent config; `--strict-mcp-config` ignores every other MCP server configured on the machine; `--restricted` drops code-execution tools and ignores project/user settings files. Nothing is ever written to project, user, or local Claude Code settings, so there's no "disconnect" step afterward — the server was never added anywhere durable, and other sessions on the machine are unaffected regardless of how the script exits. This is preferable to `claude mcp add` + `claude mcp remove`, which mutate shared config and would need explicit, failure-prone cleanup.
+
+**Requires:** the `claude` CLI installed and authenticated, and Docker. Not run in CI or as part of `npm test` — it makes a real LLM call and costs API usage (capped at $0.50 via `--max-budget-usd`).
 
 ---
 
