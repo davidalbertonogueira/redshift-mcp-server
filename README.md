@@ -73,7 +73,7 @@ docker run \
 - [Authentication](#-authentication)
 - [IDE Integration](#-ide-integration)
 - [Testing](#-testing)
-- [A2A Pet Project (Experimental)](#-a2a-pet-project-experimental)
+- [A2A (Experimental)](#-a2a-experimental)
 - [Dust.tt Integration](#-dusttt-integration)
 - [Kubernetes Deployment](#%EF%B8%8F-kubernetes-deployment)
 - [Available Tools](#-available-tools)
@@ -369,7 +369,7 @@ claude -p "..." \
 
 ---
 
-## 🤝 A2A Pet Project (Experimental)
+## 🤝 A2A (Experimental)
 
 Two extra, unpublished sibling packages — `a2a-agent/` and `a2a-bridge/` — expose this server to *other agents* over the [A2A protocol](https://a2a-protocol.org), not just to the Claude Code session sitting directly on top of it. Not part of this npm package; doesn't affect anything above.
 
