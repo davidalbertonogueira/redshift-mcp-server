@@ -18,7 +18,8 @@
     "test:db:up": "docker compose -f test/docker-compose.yml up -d --wait",
     "test:db:down": "docker compose -f test/docker-compose.yml down -v",
     "test:db:logs": "docker compose -f test/docker-compose.yml logs -f",
-    "test:e2e": "node test/e2e/ask-redshift-mcp.mjs"
+    "test:e2e": "node test/e2e/ask-redshift-mcp.mjs",
+    "test:e2e:a2a": "node test/e2e/ask-redshift-agent.mjs"
   },
   "keywords": [
     "mcp",

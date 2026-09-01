@@ -73,6 +73,7 @@ docker run \
 - [Authentication](#-authentication)
 - [IDE Integration](#-ide-integration)
 - [Testing](#-testing)
+- [A2A Pet Project (Experimental)](#-a2a-pet-project-experimental)
 - [Dust.tt Integration](#-dusttt-integration)
 - [Kubernetes Deployment](#%EF%B8%8F-kubernetes-deployment)
 - [Available Tools](#-available-tools)
@@ -365,6 +366,14 @@ claude -p "..." \
 `--mcp-config` loads the server from a throwaway JSON file instead of any persistent config; `--strict-mcp-config` ignores every other MCP server configured on the machine; `--restricted` drops code-execution tools and ignores project/user settings files. Nothing is ever written to project, user, or local Claude Code settings, so there's no "disconnect" step afterward — the server was never added anywhere durable, and other sessions on the machine are unaffected regardless of how the script exits. This is preferable to `claude mcp add` + `claude mcp remove`, which mutate shared config and would need explicit, failure-prone cleanup.
 
 **Requires:** the `claude` CLI installed and authenticated, and Docker. Not run in CI or as part of `npm test` — it makes a real LLM call and costs API usage (capped at $0.50 via `--max-budget-usd`).
+
+---
+
+## 🤝 A2A Pet Project (Experimental)
+
+Two extra, unpublished sibling packages — `a2a-agent/` and `a2a-bridge/` — expose this server to *other agents* over the [A2A protocol](https://a2a-protocol.org), not just to the Claude Code session sitting directly on top of it. Not part of this npm package; doesn't affect anything above.
+
+See **[A2A.md](./A2A.md)** for the architecture, configuration, how to run it, and how to test it (unit tests + a real end-to-end script driving the actual `claude` CLI).
 
 ---
 
