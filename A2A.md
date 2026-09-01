@@ -208,7 +208,15 @@ That registers the bridge **durably** (written to your local Claude Code config,
 
 ### One-shot, nothing-persisted alternative
 
-Same pattern [`test/e2e/ask-redshift-agent.mjs`](./test/e2e/ask-redshift-agent.mjs) actually uses, and the one to reach for in any automation — write a throwaway `--mcp-config` and skip `claude mcp add` entirely:
+Same pattern [`test/e2e/ask-redshift-agent.mjs`](./test/e2e/ask-redshift-agent.mjs) actually uses, and the one to reach for in any automation — write a throwaway `--mcp-config` and skip `claude mcp add` entirely.
+
+**`a2a-agent` from step 2 must already be running on `:4000`** for either version below to get an actual answer instead of a "bridge unreachable" response — this only replaces step 3 (registering the bridge), not step 2 (starting the agent). Starting the emulator (`npm run test:db:up`) is not the same thing as starting `a2a-agent` — that's a separate `npm start` in `a2a-agent/`, pointed at the emulator's connection string:
+
+```powershell
+cd a2a-agent
+$env:DATABASE_URL = "redshift://redshift:redshift@localhost:5439/analytics"
+npm start
+```
 
 ```bash
 cat > /tmp/mcp-config.json <<'EOF'
