@@ -151,29 +151,64 @@ Binds to `localhost` only — this is a local pet project, not something to expo
 
 ## Running it
 
+Commands are given for bash (macOS/Linux/Git Bash) first, with a PowerShell equivalent under each where the syntax actually differs — plain `npm`/`node`/`claude` invocations are identical in both.
+
+### 1. Build everything
+
 ```bash
-# 1. Build everything
 npm run build                 # repo root
 cd a2a-agent && npm install && npm run build && cd ..
 cd a2a-bridge && npm install && npm run build && cd ..
+```
 
-# 2. Start the agent
+Identical in PowerShell — `&&` chaining works the same way in modern PowerShell (7+); on Windows PowerShell 5.1, run each command on its own line instead:
+
+```powershell
+npm run build
+cd a2a-agent; npm install; npm run build; cd ..
+cd a2a-bridge; npm install; npm run build; cd ..
+```
+
+### 2. Start the agent
+
+```bash
 cd a2a-agent
 cp .env.example .env          # then edit DATABASE_URL
-npm start                     # listens on http://localhost:4000
+DATABASE_URL="redshift://user:pass@host:5439/db?ssl=true" npm start
+```
 
-# 3. Point a Claude Code session at the bridge (in a separate terminal/session)
+```powershell
+cd a2a-agent
+Copy-Item .env.example .env   # then edit DATABASE_URL
+$env:DATABASE_URL = "redshift://user:pass@host:5439/db?ssl=true"
+npm start                     # listens on http://localhost:4000
+```
+`$env:DATABASE_URL` only lives for that PowerShell process — closing the window is all the cleanup it needs, it won't leak into other terminals.
+
+### 3. Point a Claude Code session at the bridge (in a separate terminal/session)
+
+```bash
 claude mcp add redshift-a2a-bridge -s local \
   -e REDSHIFT_AGENT_URL=http://localhost:4000 \
   -- node /absolute/path/to/a2a-bridge/dist/index.js
-
-# 4. Ask it something
-# "Using the redshift agent, how many orders have status 'completed'?"
 ```
+
+```powershell
+claude mcp add redshift-a2a-bridge -s local `
+  -e REDSHIFT_AGENT_URL=http://localhost:4000 `
+  -- node "$PWD\a2a-bridge\dist\index.js"
+```
+(PowerShell's line-continuation character is a backtick `` ` ``, not `\` — and `\` in `$PWD\a2a-bridge\...` is a literal path separator here, not an escape.)
+
+### 4. Ask it something
+
+*"Using the redshift agent, how many orders have status 'completed'?"* — same in both shells, since that's just talking to `claude` interactively.
 
 That registers the bridge **durably** (written to your local Claude Code config, stays until `claude mcp remove redshift-a2a-bridge`) — the right choice for an interactive session where you'll ask it several things.
 
-For a one-shot, scripted, nothing-persisted call instead — same pattern [`test/e2e/ask-redshift-agent.mjs`](./test/e2e/ask-redshift-agent.mjs) actually uses, and the one to reach for in any automation — write a throwaway `--mcp-config` and skip `claude mcp add` entirely:
+### One-shot, nothing-persisted alternative
+
+Same pattern [`test/e2e/ask-redshift-agent.mjs`](./test/e2e/ask-redshift-agent.mjs) actually uses, and the one to reach for in any automation — write a throwaway `--mcp-config` and skip `claude mcp add` entirely:
 
 ```bash
 cat > /tmp/mcp-config.json <<'EOF'
@@ -197,9 +232,31 @@ claude -p "How many orders have status 'completed'?" \
   --max-budget-usd 0.50
 ```
 
+```powershell
+$config = @{
+  mcpServers = @{
+    "redshift-a2a-bridge" = @{
+      command = "node"
+      args    = @("$PWD\a2a-bridge\dist\index.js")
+      env     = @{ REDSHIFT_AGENT_URL = "http://localhost:4000" }
+    }
+  }
+}
+$config | ConvertTo-Json -Depth 5 | Set-Content -Encoding ascii mcp-config.json
+
+claude -p "How many orders have status 'completed'?" `
+  --mcp-config mcp-config.json `
+  --strict-mcp-config `
+  --restricted `
+  --allowedTools "mcp__redshift-a2a-bridge__ask_redshift_agent" `
+  --output-format json `
+  --max-budget-usd 0.50
+```
+**Don't** hand-write the JSON as a here-string (`@"..."@ | Set-Content`) on Windows — two things go wrong at once: `Set-Content -Encoding utf8` on Windows PowerShell 5.1 always writes a **UTF-8 BOM**, which `claude` rejects with `MCP config is not a valid JSON` before it even looks at the content; and a raw Windows path like `$PWD\a2a-bridge\...` interpolated straight into a JSON string produces **invalid escape sequences** (`\a`, `\d`, ...), since JSON only allows `\\` for a literal backslash. `ConvertTo-Json` above sidesteps both — it escapes the path correctly, and `-Encoding ascii` has no BOM to begin with (safe here since every value is plain ASCII).
+
 The tool name after the double underscore is always `ask_redshift_agent` (the bridge's one and only tool, defined in `a2a-bridge/src/server.ts`) — the part before it is whatever server name you pick at registration time, `redshift-a2a-bridge` here to match the bridge's own `package.json` name and the e2e script's config.
 
-Sanity-check the agent on its own before wiring up the bridge:
+### Sanity-checking the agent on its own, before wiring up the bridge
 
 ```bash
 curl http://localhost:4000/.well-known/agent-card.json
@@ -208,6 +265,27 @@ curl -X POST http://localhost:4000/ -H "Content-Type: application/json" -d '{
   "jsonrpc":"2.0","id":1,"method":"message/send",
   "params":{"message":{"kind":"message","messageId":"11111111-1111-1111-1111-111111111111","role":"user","parts":[{"kind":"text","text":"Reply with exactly one word: OK"}]}}}'
 ```
+
+```powershell
+curl.exe http://localhost:4000/.well-known/agent-card.json
+
+$body = @{
+  jsonrpc = "2.0"
+  id      = 1
+  method  = "message/send"
+  params  = @{
+    message = @{
+      kind      = "message"
+      messageId = "11111111-1111-1111-1111-111111111111"
+      role      = "user"
+      parts     = @(@{ kind = "text"; text = "Reply with exactly one word: OK" })
+    }
+  }
+} | ConvertTo-Json -Depth 10
+
+Invoke-RestMethod -Uri http://localhost:4000/ -Method Post -ContentType "application/json" -Body $body
+```
+Use `curl.exe` explicitly, not bare `curl` — PowerShell aliases `curl` to `Invoke-WebRequest`, which takes different flags and will silently misinterpret `-X`/`-d`. For the JSON-RPC POST, `Invoke-RestMethod` plus `ConvertTo-Json` avoids hand-escaping nested quotes in a `-d` string, which is genuinely painful in PowerShell.
 
 ## Testing
 
