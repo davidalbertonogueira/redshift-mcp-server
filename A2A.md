@@ -1,4 +1,4 @@
-# A2A Pet Project (Experimental)
+# A2A (Experimental)
 
 Two extra packages, `a2a-agent/` and `a2a-bridge/`, that expose this MCP server to *other agents* over the [A2A (Agent2Agent) protocol](https://a2a-protocol.org), instead of just to the Claude Code session sitting on top of it.
 
@@ -6,7 +6,7 @@ Two extra packages, `a2a-agent/` and `a2a-bridge/`, that expose this MCP server 
 
 ## Why this exists
 
-`redshift-mcp-server` is an MCP *server*: a host app (Claude Code, Cursor, ...) with its own LLM connects to it and calls its tools directly. A2A answers a different question — how does one autonomous agent delegate a task to a *different* agent it doesn't control, without seeing that agent's internal tools or prompts? This pet project answers that concretely: it wraps this repo's MCP server behind an A2A-speaking agent, whose own reasoning loop is a headless Claude Code CLI call (`claude -p`) — reusing a Claude subscription seat instead of metered API/Bedrock billing.
+`redshift-mcp-server` is an MCP *server*: a host app (Claude Code, Cursor, ...) with its own LLM connects to it and calls its tools directly. A2A answers a different question — how does one autonomous agent delegate a task to a *different* agent it doesn't control, without seeing that agent's internal tools or prompts? This experiment answers that concretely: it wraps this repo's MCP server behind an A2A-speaking agent, whose own reasoning loop is a headless Claude Code CLI call (`claude -p`) — reusing a Claude subscription seat instead of metered API/Bedrock billing.
 
 ## Architecture
 
@@ -135,7 +135,7 @@ server.connect(new StdioServerTransport())
 | `PORT` | No | `4000` | Port the A2A HTTP server listens on |
 | `AGENT_BASE_URL` | No | `http://localhost:${PORT}` | The `url` published in the agent's `AgentCard` — must be reachable at whatever address `a2a-bridge` (or any other A2A client) will use |
 
-Binds to `localhost` only — this is a local pet project, not something to expose beyond your machine (see [Known limitations](#known-limitations)).
+Binds to `localhost` only — this is a local experiment, not something to expose beyond your machine (see [Known limitations](#known-limitations)).
 
 ### `a2a-bridge/.env` (copy from `a2a-bridge/.env.example`)
 
@@ -322,6 +322,6 @@ Builds the root server, `a2a-agent`, and `a2a-bridge`; starts the Postgres/Redsh
 
 - **No streaming.** `message/send`, not `message/stream` — `claude -p --output-format json` is itself a blocking call with nothing incremental to stream from.
 - **No auth on the A2A endpoint.** `UserBuilder.noAuthentication`, bound to `localhost`. The root server's [`src/middleware/auth.ts`](./src/middleware/auth.ts) bearer-token pattern is directly reusable if this ever needs to leave your machine.
-- **One `claude -p` subprocess per A2A task**, no pooling/queueing — fine at pet-project scale; N concurrent requests means N concurrent Redshift connections, each from a freshly-spawned MCP server child.
+- **One `claude -p` subprocess per A2A task**, no pooling/queueing — fine at this scale; N concurrent requests means N concurrent Redshift connections, each from a freshly-spawned MCP server child.
 - **`@a2a-js/sdk` is pinned to `0.3.14`** (exact, not `^`) in both packages. `npm install @a2a-js/sdk` today resolves `1.1.0`, a breaking rewrite of the wire format (flat `AgentCard.url` → `supportedInterfaces[]`, text `Part` → a different discriminated union, `message/send` → `SendMessage`). Don't bump this without re-checking the SDK's migration guide.
 - **`a2a-bridge` pins `@modelcontextprotocol/sdk` to `1.20.0` exactly** (matching the root server's currently-resolved version) plus a `zod-to-json-schema` override to `3.24.6`, to dodge a TypeScript type-checking regression between newer `@modelcontextprotocol/sdk` releases (which pull `zod` v4) and `zod-to-json-schema@3.25.x`. `npm audit` will flag `@modelcontextprotocol/sdk@1.20.0` for known advisories (DNS-rebinding protection, ReDoS, cross-client transport reuse) fixed in `1.30.0` — same version root already pins, not a regression introduced here, and low real risk given `a2a-bridge` only runs over local stdio to a single client.
